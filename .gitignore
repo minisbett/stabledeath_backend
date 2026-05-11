@@ -1,0 +1,8 @@
+/target
+timeseries.db
+.env
+Cargo.lock
+output.*
+expanded.*
+/tests/custom.rs
+/.vscode
