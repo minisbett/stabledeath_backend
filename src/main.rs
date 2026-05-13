@@ -66,9 +66,9 @@ async fn main() {
     let app = Router::new()
         .nest("/api/bars", routes::bars::router())
         .nest("/api/graphs", routes::graphs::router())
+        .layer(tower_http::trace::TraceLayer::new_for_http())
         .route("/metrics", get(|| async move { metric_handler.render() }))
         .layer(layer)
-        .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(server_state);
 
     let addr = match env::var("APP_ADDR") {

@@ -8,7 +8,7 @@ use crate::{
 };
 
 impl Database {
-    #[tracing::instrument(skip(self), fields(timestamp = entry.timestamp, stable = entry.stable, lazer = entry.lazer))]
+    #[tracing::instrument(skip(self))]
     pub async fn insert_measurement(&mut self, entry: MeasurementEntry) -> Result<()> {
         let result = query!(
             r#"
@@ -125,7 +125,7 @@ WHERE (CAST(lazer AS REAL) / (stable + lazer)) = (
         Ok(peak)
     }
 
-    #[tracing::instrument(skip(self), fields(start = %start, end = %end))]
+    #[tracing::instrument(skip(self))]
     pub async fn get_history_range(
         &self,
         start: DateTime<Utc>,
@@ -133,11 +133,7 @@ WHERE (CAST(lazer AS REAL) / (stable + lazer)) = (
     ) -> Result<Vec<MeasurementEntry>> {
         let timestamp_start = start.timestamp();
         let timestamp_end = end.timestamp();
-        tracing::debug!(
-            timestamp_start,
-            timestamp_end,
-            "Fetching measurement history range"
-        );
+        tracing::debug!("Fetching measurement history range");
 
         let result = query_as!(
             MeasurementEntry,
@@ -153,10 +149,7 @@ ORDER BY timestamp ASC
         .fetch_all(&*self)
         .await?;
 
-        tracing::info!(
-            len = result.len(),
-            "Fetched data between {start:?} and {end:?}"
-        );
+        tracing::info!(len = result.len(), "Fetched history data");
         Ok(result)
     }
 
