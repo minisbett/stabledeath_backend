@@ -5,6 +5,10 @@ use axum::{Router, routing::get};
 use axum_prometheus::PrometheusMetricLayer;
 use rustls::crypto::{CryptoProvider, ring};
 use tokio::time::Instant;
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 mod database;
 mod routes;

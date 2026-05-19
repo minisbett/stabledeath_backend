@@ -24,3 +24,4 @@ metrics = "0.24.5"
 crypto = "0.5.1"
 rustls = { version = "0.23.40", features = ["ring"] }
 tower-http = { version = "0.6.10", features = ["trace"] }
+mimalloc = "0.1.50"
