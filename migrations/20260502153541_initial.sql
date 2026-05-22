@@ -1,15 +1,16 @@
 -- Add migration script here
-CREATE TABLE `daily` (
-	`date` integer PRIMARY KEY NOT NULL,
-	`stable` integer NOT NULL,
-	`lazer` integer NOT NULL
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+
+CREATE TABLE IF NOT EXISTS measurements (
+  "timestamp" TIMESTAMPTZ NOT NULL PRIMARY KEY,
+  stable BIGINT NOT NULL,
+  lazer BIGINT NOT NULL
 );
-CREATE UNIQUE INDEX `idx_date` ON `daily` (`date`,`stable`,`lazer`);
-CREATE TABLE "measurements"(
-  timestamp,
-  stable INT,
-  lazer INT
+SELECT create_hypertable('measurements', by_range('timestamp'), if_not_exists => TRUE);
+
+CREATE TABLE IF NOT EXISTS daily (
+  "date" TIMESTAMPTZ NOT NULL PRIMARY KEY,
+  stable BIGINT NOT NULL,
+  lazer BIGINT NOT NULL
 );
-CREATE UNIQUE INDEX idx_measurements_ts
-ON "measurements" (timestamp);
-CREATE UNIQUE INDEX `idx_timestamp` ON `measurements` (`timestamp`,`stable`,`lazer`);
+SELECT create_hypertable('daily', by_range('date'), if_not_exists => TRUE);

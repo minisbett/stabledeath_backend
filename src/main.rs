@@ -3,9 +3,9 @@ use std::{env, sync::Arc, time::Duration};
 
 use axum::{Router, routing::get};
 use axum_prometheus::PrometheusMetricLayer;
+use mimalloc::MiMalloc;
 use rustls::crypto::{CryptoProvider, ring};
 use tokio::time::Instant;
-use mimalloc::MiMalloc;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;

@@ -1,6 +1,6 @@
 use chrono::{DateTime, Days, Utc};
 use color_eyre::eyre::{Result, bail};
-use sqlx::{Sqlite, query, query_as};
+use sqlx::{Postgres, query, query_as, query_scalar};
 
 use crate::{
     database::{Database, models::MeasurementEntry},
@@ -10,24 +10,22 @@ use crate::{
 impl Database {
     #[tracing::instrument(skip(self))]
     pub async fn insert_measurement(&mut self, entry: MeasurementEntry) -> Result<()> {
-        let result = query!(
+        let result = query(
             r#"
-INSERT INTO measurements ( timestamp, stable, lazer )
-VALUES ( ?1, ?2, ?3 )
+INSERT INTO measurements ( "timestamp", stable, lazer )
+VALUES ( to_timestamp($1), $2, $3 )
+ON CONFLICT ("timestamp") DO NOTHING
             "#,
-            entry.timestamp,
-            entry.stable,
-            entry.lazer
         )
+        .bind(entry.timestamp as f64)
+        .bind(entry.stable)
+        .bind(entry.lazer)
         .execute(&*self)
         .await;
 
         let _ = match result {
-            Ok(_) => tracing::info!("Inserted measurement"),
-            Err(e)
-                if e.as_database_error()
-                    .is_some_and(|error| error.is_unique_violation()) =>
-            {
+            Ok(result) if result.rows_affected() > 0 => tracing::info!("Inserted measurement"),
+            Ok(_) => {
                 tracing::debug!("Skipped duplicate measurement")
             }
             Err(e) => bail!("Database error: {e}"),
@@ -38,13 +36,16 @@ VALUES ( ?1, ?2, ?3 )
     #[tracing::instrument(skip(self))]
     pub async fn get_user_count_peak(&self) -> Result<MeasurementEntry> {
         tracing::debug!("Fetching peak lazer user count measurement");
-        let result = query_as!(
-            MeasurementEntry,
+        let result = query_as::<_, MeasurementEntry>(
             r#"
-SELECT *
+SELECT
+    EXTRACT(EPOCH FROM "timestamp")::BIGINT AS timestamp,
+    stable,
+    lazer
 FROM measurements
-WHERE lazer = (SELECT MAX(lazer) FROM measurements)
-            "#
+ORDER BY lazer DESC, "timestamp" ASC
+LIMIT 1
+            "#,
         )
         .fetch_one(&*self)
         .await?;
@@ -61,17 +62,18 @@ WHERE lazer = (SELECT MAX(lazer) FROM measurements)
     #[tracing::instrument(skip(self))]
     pub async fn get_user_ratio_peak(&self) -> Result<MeasurementEntry> {
         tracing::debug!("Fetching peak lazer ratio measurement");
-        let result = query_as!(
-            MeasurementEntry,
+        let result = query_as::<_, MeasurementEntry>(
             r#"
-SELECT *
+SELECT
+    EXTRACT(EPOCH FROM "timestamp")::BIGINT AS timestamp,
+    stable,
+    lazer
 FROM measurements
-WHERE (CAST(lazer AS REAL) / (stable + lazer)) = (
-    SELECT MAX(CAST(lazer AS REAL) / (stable + lazer))
-    FROM measurements
-    WHERE (stable + lazer) > 0
-)
-            "#
+WHERE (stable + lazer) > 0
+ORDER BY (lazer::DOUBLE PRECISION / NULLIF((stable + lazer)::DOUBLE PRECISION, 0)) DESC,
+         "timestamp" ASC
+LIMIT 1
+            "#,
         )
         .fetch_one(&*self)
         .await?;
@@ -89,9 +91,9 @@ WHERE (CAST(lazer AS REAL) / (stable + lazer)) = (
     #[tracing::instrument(skip(self))]
     pub async fn get_user_highest_percentile_peak(&self) -> Result<MeasurementEntry> {
         tracing::debug!("Fetching highest user count within peak ratio percentile");
-        let max_percentage: f64 = sqlx::query_scalar::<Sqlite, f64>(
+        let max_percentage: f64 = query_scalar::<Postgres, f64>(
             r#"
-            SELECT MAX(CAST(lazer AS REAL) / (stable + lazer))
+            SELECT MAX(lazer::DOUBLE PRECISION / NULLIF((stable + lazer)::DOUBLE PRECISION, 0))
             FROM measurements
             WHERE (stable + lazer) > 0
             "#,
@@ -101,12 +103,16 @@ WHERE (CAST(lazer AS REAL) / (stable + lazer)) = (
 
         tracing::debug!(max_percentage, "Found maximum lazer ratio");
 
-        let peak: MeasurementEntry = sqlx::query_as(
+        let peak: MeasurementEntry = query_as(
             r#"
-            SELECT timestamp, stable, lazer
+            SELECT
+                EXTRACT(EPOCH FROM "timestamp")::BIGINT AS timestamp,
+                stable,
+                lazer
             FROM measurements
-            WHERE (CAST(lazer AS REAL) / (stable + lazer)) >= ?
-            ORDER BY lazer DESC
+            WHERE (stable + lazer) > 0
+              AND (lazer::DOUBLE PRECISION / NULLIF((stable + lazer)::DOUBLE PRECISION, 0)) >= $1
+            ORDER BY lazer DESC, "timestamp" ASC
             LIMIT 1
             "#,
         )
@@ -131,21 +137,21 @@ WHERE (CAST(lazer AS REAL) / (stable + lazer)) = (
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> Result<Vec<MeasurementEntry>> {
-        let timestamp_start = start.timestamp();
-        let timestamp_end = end.timestamp();
         tracing::debug!("Fetching measurement history range");
 
-        let result = query_as!(
-            MeasurementEntry,
+        let result = query_as::<_, MeasurementEntry>(
             r#"
-SELECT *
+SELECT
+    EXTRACT(EPOCH FROM "timestamp")::BIGINT AS timestamp,
+    stable,
+    lazer
 FROM measurements
-WHERE timestamp >= ?1 AND timestamp < ?2
-ORDER BY timestamp ASC
+WHERE "timestamp" >= $1 AND "timestamp" < $2
+ORDER BY "timestamp" ASC
             "#,
-            timestamp_start,
-            timestamp_end
         )
+        .bind(start)
+        .bind(end)
         .fetch_all(&*self)
         .await?;
 

@@ -4,82 +4,86 @@ pub mod models;
 use color_eyre::{Result, eyre::Context};
 use futures::future::BoxFuture;
 use futures::stream::BoxStream;
-use sqlx::sqlite::{SqliteStatement, SqliteTypeInfo};
-use sqlx::{Describe, Error as SqlxError, Execute, SqlitePool};
-use sqlx::{
-    Either, Executor, Sqlite, Transaction,
-    pool::PoolConnection,
-    sqlite::{SqlitePoolOptions, SqliteQueryResult, SqliteRow},
-};
+use sqlx::postgres::{PgPoolOptions, PgQueryResult, PgRow, PgStatement, PgTypeInfo};
+use sqlx::{Describe, Error as SqlxError, Execute, PgPool};
+use sqlx::{Either, Executor, Postgres, Transaction, pool::PoolConnection};
 
 #[derive(Debug)]
 pub struct Database {
-    pool: sqlx::sqlite::SqlitePool,
+    pool: PgPool,
 }
 
 impl Database {
     pub async fn new(uri: &str) -> Result<Self> {
-        tracing::debug!("Opening SQLite connection pool");
-        let pool = SqlitePoolOptions::new().connect(uri).await?;
-        tracing::info!("SQLite connection pool ready");
+        tracing::debug!("Opening Postgres connection pool");
+        let pool = PgPoolOptions::new().connect(uri).await?;
+        tracing::info!("Postgres connection pool ready");
 
         Ok(Self { pool })
     }
 
-    pub async fn acquire(&self) -> Result<PoolConnection<Sqlite>> {
-        tracing::trace!("Acquiring SQLite connection from pool");
+    pub async fn acquire(&self) -> Result<PoolConnection<Postgres>> {
+        tracing::trace!("Acquiring Postgres connection from pool");
         self.pool
             .acquire()
             .await
-            .wrap_err("Failed to acquire an SQLite connection")
+            .wrap_err("Failed to acquire a Postgres connection")
     }
 
-    pub async fn begin(&self) -> Result<Transaction<'static, Sqlite>> {
-        tracing::trace!("Starting SQLite transaction");
+    pub async fn begin(&self) -> Result<Transaction<'static, Postgres>> {
+        tracing::trace!("Starting Postgres transaction");
         self.pool
             .begin()
             .await
-            .wrap_err("Failed to start an SQLite transaction")
+            .wrap_err("Failed to start a Postgres transaction")
+    }
+
+    pub async fn migrate(&self) -> Result<()> {
+        tracing::trace!("Running migrations");
+        let pool = &self.pool;
+        sqlx::migrate!("./migrations").run(pool).await?;
+
+        Ok(())
     }
 }
 
 impl<'d, 'p> Executor<'p> for &'d Database {
-    type Database = Sqlite;
+    type Database = Postgres;
 
     #[inline]
     fn fetch_many<'e, 'q: 'e, E: 'q>(
         self,
         query: E,
-    ) -> BoxStream<'e, std::result::Result<Either<SqliteQueryResult, SqliteRow>, SqlxError>>
+    ) -> BoxStream<'e, std::result::Result<Either<PgQueryResult, PgRow>, SqlxError>>
     where
         'p: 'e,
         E: Execute<'q, Self::Database>,
     {
-        <&SqlitePool as Executor<'p>>::fetch_many(&self.pool, query)
+        <&PgPool as Executor<'p>>::fetch_many(&self.pool, query)
     }
 
     #[inline]
     fn fetch_optional<'e, 'q: 'e, E: 'q>(
         self,
         query: E,
-    ) -> BoxFuture<'e, Result<Option<SqliteRow>, SqlxError>>
+    ) -> BoxFuture<'e, Result<Option<PgRow>, SqlxError>>
     where
         'p: 'e,
         E: Execute<'q, Self::Database>,
     {
-        <&SqlitePool as Executor<'p>>::fetch_optional(&self.pool, query)
+        <&PgPool as Executor<'p>>::fetch_optional(&self.pool, query)
     }
 
     #[inline]
     fn prepare_with<'e, 'q: 'e>(
         self,
         sql: &'q str,
-        parameters: &'e [SqliteTypeInfo],
-    ) -> BoxFuture<'e, Result<SqliteStatement<'q>, SqlxError>>
+        parameters: &'e [PgTypeInfo],
+    ) -> BoxFuture<'e, Result<PgStatement<'q>, SqlxError>>
     where
         'p: 'e,
     {
-        <&SqlitePool as Executor<'p>>::prepare_with(&self.pool, sql, parameters)
+        <&PgPool as Executor<'p>>::prepare_with(&self.pool, sql, parameters)
     }
 
     #[inline]
@@ -90,6 +94,6 @@ impl<'d, 'p> Executor<'p> for &'d Database {
     where
         'p: 'e,
     {
-        <&SqlitePool as Executor<'p>>::describe(&self.pool, sql)
+        <&PgPool as Executor<'p>>::describe(&self.pool, sql)
     }
 }

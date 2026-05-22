@@ -15,13 +15,15 @@ impl Database {
     #[tracing::instrument(skip(self))]
     pub async fn get_history(&self) -> Result<Vec<DailyEntry>> {
         tracing::debug!("Fetching daily history rows");
-        let rows = query_as!(
-            DailyEntry,
+        let rows = query_as::<_, DailyEntry>(
             r#"
-SELECT date, stable, lazer
+SELECT
+    EXTRACT(EPOCH FROM "date")::BIGINT AS date,
+    stable,
+    lazer
 FROM daily
-ORDER BY date ASC
-            "#
+ORDER BY "date" ASC
+            "#,
         )
         .fetch_all(&*self)
         .await?;
