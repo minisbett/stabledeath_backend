@@ -1,5 +1,5 @@
 use chrono::{DateTime, Days, Utc};
-use color_eyre::eyre::{Result, bail};
+use color_eyre::eyre::{Context, Result, bail};
 use sqlx::{Postgres, query, query_as, query_scalar};
 
 use crate::{
@@ -12,9 +12,9 @@ impl Database {
     pub async fn insert_measurement(&mut self, entry: MeasurementEntry) -> Result<()> {
         let result = query(
             r#"
-INSERT INTO measurements ( "timestamp", stable, lazer )
+INSERT INTO measurements ( time, stable, lazer )
 VALUES ( to_timestamp($1), $2, $3 )
-ON CONFLICT ("timestamp") DO NOTHING
+ON CONFLICT (time) DO NOTHING
             "#,
         )
         .bind(entry.timestamp as f64)
@@ -39,11 +39,11 @@ ON CONFLICT ("timestamp") DO NOTHING
         let result = query_as::<_, MeasurementEntry>(
             r#"
 SELECT
-    EXTRACT(EPOCH FROM "timestamp")::BIGINT AS timestamp,
+    EXTRACT(EPOCH FROM time)::BIGINT AS timestamp,
     stable,
     lazer
 FROM measurements
-ORDER BY lazer DESC, "timestamp" ASC
+ORDER BY lazer DESC, time ASC
 LIMIT 1
             "#,
         )
@@ -65,13 +65,13 @@ LIMIT 1
         let result = query_as::<_, MeasurementEntry>(
             r#"
 SELECT
-    EXTRACT(EPOCH FROM "timestamp")::BIGINT AS timestamp,
+    EXTRACT(EPOCH FROM time)::BIGINT AS timestamp,
     stable,
     lazer
 FROM measurements
-WHERE (stable + lazer) > 0
+WHERE (stable + lazer) > 5000
 ORDER BY (lazer::DOUBLE PRECISION / NULLIF((stable + lazer)::DOUBLE PRECISION, 0)) DESC,
-         "timestamp" ASC
+         time ASC
 LIMIT 1
             "#,
         )
@@ -95,7 +95,8 @@ LIMIT 1
             r#"
             SELECT MAX(lazer::DOUBLE PRECISION / NULLIF((stable + lazer)::DOUBLE PRECISION, 0))
             FROM measurements
-            WHERE (stable + lazer) > 0
+            WHERE ((stable + lazer) > 3000)
+              AND lazer > 0 AND stable > 0
             "#,
         )
         .fetch_one(&*self)
@@ -106,13 +107,14 @@ LIMIT 1
         let peak: MeasurementEntry = query_as(
             r#"
             SELECT
-                EXTRACT(EPOCH FROM "timestamp")::BIGINT AS timestamp,
+                EXTRACT(EPOCH FROM time)::BIGINT AS timestamp,
                 stable,
                 lazer
             FROM measurements
-            WHERE (stable + lazer) > 0
+            WHERE ((stable + lazer) > 3000)
+              AND lazer > 0 AND stable > 0
               AND (lazer::DOUBLE PRECISION / NULLIF((stable + lazer)::DOUBLE PRECISION, 0)) >= $1
-            ORDER BY lazer DESC, "timestamp" ASC
+            ORDER BY lazer DESC, time ASC
             LIMIT 1
             "#,
         )
@@ -142,12 +144,12 @@ LIMIT 1
         let result = query_as::<_, MeasurementEntry>(
             r#"
 SELECT
-    EXTRACT(EPOCH FROM "timestamp")::BIGINT AS timestamp,
+    EXTRACT(EPOCH FROM time)::BIGINT AS timestamp,
     stable,
     lazer
 FROM measurements
-WHERE "timestamp" >= $1 AND "timestamp" < $2
-ORDER BY "timestamp" ASC
+WHERE time >= $1 AND time < $2
+ORDER BY time ASC
             "#,
         )
         .bind(start)
@@ -169,6 +171,8 @@ ORDER BY "timestamp" ASC
             bail!("Failed to calculate past-day start time");
         };
 
-        self.get_history_range(start, now).await
+        self.get_history_range(start, now)
+            .await
+            .wrap_err("Failed to fetch past day")
     }
 }

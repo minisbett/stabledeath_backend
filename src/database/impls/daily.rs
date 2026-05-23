@@ -18,11 +18,11 @@ impl Database {
         let rows = query_as::<_, DailyEntry>(
             r#"
 SELECT
-    EXTRACT(EPOCH FROM "date")::BIGINT AS date,
-    stable,
-    lazer
-FROM daily
-ORDER BY "date" ASC
+    EXTRACT(EPOCH FROM day_bucket)::BIGINT AS date,
+    stable_avg AS stable,
+    lazer_avg AS lazer
+FROM changelog_counts_daily_aggregate
+ORDER BY day_bucket ASC
             "#,
         )
         .fetch_all(&*self)

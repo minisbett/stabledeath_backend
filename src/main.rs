@@ -27,6 +27,8 @@ async fn main() {
             "{}=debug,tower_http=debug,axum::rejection=trace",
             env!("CARGO_CRATE_NAME")
         )))
+        .with_line_number(true)
+        .with_file(true)
         .init();
 
     tracing::info!(

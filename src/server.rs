@@ -58,6 +58,7 @@ impl Server {
         })
     }
 
+    #[tracing::instrument(skip_all)]
     pub async fn build_cache(osu: &Osu, database: &mut Database) -> Result<ApplicationCache> {
         tracing::info!("Refreshing application cache data");
         let initial_timestamp = Utc::now();
