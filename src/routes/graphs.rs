@@ -9,7 +9,7 @@ use serde::Deserialize;
 
 use crate::{
     server::ServerState,
-    types::{PointLineResponse, RatioRegressionResponse},
+    types::{BucketSize, PointLineResponse, RatioRegressionResponse},
 };
 
 pub async fn user_count_graph(State(state): State<ServerState>) -> Json<PointLineResponse> {
@@ -22,10 +22,12 @@ pub async fn user_count_graph(State(state): State<ServerState>) -> Json<PointLin
     response
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 pub struct HistoryQuery {
     from: Option<i64>,
     to: Option<i64>,
+    #[serde(default)]
+    bucket_size: BucketSize,
 }
 
 pub async fn history_user_graph(
@@ -35,7 +37,18 @@ pub async fn history_user_graph(
     let response: PointLineResponse;
     match (query.from, query.to) {
         (None, None) => {
-            response = state.lock().await.cache().historical_user_graph().into();
+            if let BucketSize::Day = query.bucket_size {
+                response = state.lock().await.cache().historical_user_graph().into();
+            } else {
+                response = state
+                    .lock()
+                    .await
+                    .database()
+                    .get_history(query.bucket_size)
+                    .await
+                    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                    .into();
+            }
         }
         (None, Some(_)) | (Some(_), None) => return Err(StatusCode::BAD_REQUEST),
         (Some(from), Some(to)) => {

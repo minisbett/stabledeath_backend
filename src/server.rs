@@ -7,7 +7,9 @@ use tokio::sync::Mutex;
 
 use crate::{
     database::Database,
-    types::{ApplicationCache, BarEntries, GraphEntries, SinglePointResponse, ratio},
+    types::{
+        self, ApplicationCache, BarEntries, BucketSize, GraphEntries, SinglePointResponse, ratio,
+    },
 };
 
 const STREAM_NAMES: [&str; 4] = ["stable40", "cuttingedge", "lazer", "tachyon"];
@@ -36,7 +38,12 @@ impl Server {
         tracing::debug!("Connecting to database");
         let mut database = Database::new(&database_url).await?;
         // Run migrations owo
-        database.migrate().await?;
+        cfg_select! {
+            not(debug_assertions) => {
+                database.migrate().await?;
+            }
+            _ => {}
+        }
 
         tracing::debug!(client_id, "Building osu! API client");
         let client = rosu_v2::OsuBuilder::new()
@@ -80,7 +87,7 @@ impl Server {
         let peak_percentile_fut = database.get_user_highest_percentile_peak();
 
         let graph_day_users_fut = database.get_past_day();
-        let graph_history_users_fut = database.get_history();
+        let graph_history_users_fut = database.get_history(BucketSize::Day);
 
         let (peak_users, peak_ratio, peak_percentile, graph_day_users, graph_history_users) = tokio::join! {
             peak_users_fut, peak_ratio_fut, peak_percentile_fut, graph_day_users_fut, graph_history_users_fut
@@ -130,7 +137,7 @@ impl Server {
         let peak_percentile_fut = database.get_user_highest_percentile_peak();
 
         let graph_day_users_fut = database.get_past_day();
-        let graph_history_users_fut = database.get_history();
+        let graph_history_users_fut = database.get_history(BucketSize::Day);
 
         let (peak_users, peak_ratio, peak_percentile, graph_day_users, graph_history_users) = tokio::join! {
             peak_users_fut, peak_ratio_fut, peak_percentile_fut, graph_day_users_fut, graph_history_users_fut

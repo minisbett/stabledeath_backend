@@ -1,5 +1,5 @@
 use chrono::{TimeDelta, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::database::models::MeasurementEntry;
 
@@ -8,6 +8,15 @@ pub fn ratio(stable: i64, lazer: i64) -> f64 {
     let (stable, lazer) = (stable as f64, lazer as f64);
     lazer / (stable + lazer)
 }
+
+#[derive(Deserialize, Default, Debug, Clone, PartialEq, Eq)]
+pub enum BucketSize {
+    #[default]
+    Day,
+    Week,
+    Month,
+}
+
 /// Changelog API entry, simplified
 #[derive(Serialize, Debug, Clone)]
 pub struct SinglePointResponse {
