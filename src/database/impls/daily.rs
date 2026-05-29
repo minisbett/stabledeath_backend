@@ -10,40 +10,37 @@ use crate::{
 };
 
 const SECONDS_PER_DAY: f64 = 86_400.0;
-const EPS: f64 = 1e-6;
 
 impl Database {
     #[tracing::instrument(skip(self))]
     pub async fn get_history(&self, bucket_size: BucketSize) -> Result<Vec<DailyEntry>> {
         tracing::debug!("Fetching daily history rows");
-
         let rows = match bucket_size {
             BucketSize::Day => query_as::<_, DailyEntry>(
                 r#"
                 SELECT
+                    -- Coalesce to remove nullchecks
                     COALESCE(EXTRACT(EPOCH FROM day_bucket)::BIGINT, 1702252800) AS date,
                     COALESCE(stable_avg, 0) AS stable,
                     COALESCE(lazer_avg, 0) AS lazer
                 FROM changelog_counts_daily_aggregate
                 ORDER BY day_bucket ASC
-                "#,
+                    "#,
             ),
-
             BucketSize::Week => query_as::<_, DailyEntry>(
                 r#"
                 SELECT
+                    -- Coalesce to remove nullchecks
                     COALESCE(EXTRACT(EPOCH FROM time_bucket('1 week', day_bucket))::BIGINT, 1702252800) AS date,
                     COALESCE(AVG(stable_avg)::BIGINT, 0) AS stable,
                     COALESCE(AVG(lazer_avg)::BIGINT, 0) AS lazer
                 FROM changelog_counts_daily_aggregate
                 GROUP BY time_bucket('1 week', day_bucket)
                 ORDER BY date ASC
-                "#,
+                    "#,
             ),
-
             BucketSize::Month => todo!(),
         };
-
         let rows = rows.fetch_all(&*self).await?;
 
         tracing::info!(rows = rows.len(), "Fetched daily history rows");
@@ -60,14 +57,13 @@ impl Database {
             target_percentage,
             "Estimating ratio target from daily history"
         );
-
         let entries = self.get_history(BucketSize::Day).await?;
         let regression = calculate_ratio_regression(entries, target_percentage)?;
 
         tracing::info!(
             target_percentage,
             estimated_timestamp = regression.estimated_timestamp,
-            "Estimated ratio target from logistic regression"
+            "Estimated ratio target from daily regression"
         );
 
         Ok(regression)
@@ -98,7 +94,6 @@ fn calculate_ratio_regression(
         });
     }
 
-    // Filter valid entries
     let valid_entries: Vec<&DailyEntry> = entries
         .iter()
         .filter(|e| e.stable + e.lazer > 0)
