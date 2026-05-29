@@ -78,13 +78,13 @@ fn calculate_ratio_regression(
 
     if let Some(entry) = entries
         .iter()
-        .filter(|e| e.stable + e.lazer > 0)
-        .find(|e| ratio(e.stable, e.lazer) >= target_ratio)
+        .filter(|entry| entry.stable + entry.lazer > 0)
+        .find(|entry| ratio(entry.stable, entry.lazer) >= target_ratio)
     {
         tracing::info!(
             target_ratio,
             estimated_timestamp = entry.date,
-            "Target already reached in observed data"
+            "Found observed daily ratio target crossing"
         );
 
         return Ok(RatioRegression {
@@ -136,17 +136,17 @@ fn calculate_ratio_regression(
     let sum_xx: f64 = points.iter().map(|(x, _)| x * x).sum();
     let sum_xy: f64 = points.iter().map(|(x, y)| x * y).sum();
 
-    let denom = n * sum_xx - sum_x * sum_x;
+    let denominator = n * sum_xx - sum_x * sum_x;
 
-    if denom.abs() <= f64::EPSILON {
-        bail!("Cannot estimate ratio target: no variance in timestamps");
+    if denominator.abs() <= f64::EPSILON {
+        bail!("Cannot estimate ratio target because daily timestamps have no variance");
     }
 
-    let k = (n * sum_xy - sum_x * sum_y) / denom;
+    let k = (n * sum_xy - sum_x * sum_y) / denominator;
     let c = (sum_y - k * sum_x) / n;
 
     if k.abs() <= f64::EPSILON {
-        bail!("Cannot estimate ratio target: flat trend");
+        bail!("Cannot estimate ratio target because the ratio trend is flat");
     }
 
     let t_50 = -c / k;
@@ -158,7 +158,7 @@ fn calculate_ratio_regression(
         || estimated_timestamp < i64::MIN as f64
         || estimated_timestamp > i64::MAX as f64
     {
-        bail!("Estimated timestamp out of bounds");
+        bail!("Estimated ratio target timestamp is outside the supported range");
     }
 
     Ok(RatioRegression {
